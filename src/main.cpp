@@ -1,5 +1,6 @@
 #include "pcapHandler.h"
 #include "data_hash_table.h"
+#include "aho_corasick.h"
 
 #include <exception>
 #include <filesystem>
@@ -36,6 +37,19 @@ int main(int argc, char* argv[]) {
         uint64_t uniqueFlows = 0, bytes = 0, tcp = 0, udp = 0;
         uint64_t syn = 0, ack = 0;
         PacketInfo packet;
+
+        //loading ahocorasick
+        AhoCorasick ac;
+        std::vector<patternInfo> patterns; //must remain unchanged and alive
+        ac.openRules(patterns, "rules/ahoRules.txt"); //adding keywords
+        if (patterns.empty())
+        {    // guard clause
+            std::cerr << "No rules loaded from ahoRules.txt\n";
+            return 1;
+        }
+
+        uint64_t PayloadAlertCount = 0; //for payload alets only
+
         std::cout << "Reading: " << std::filesystem::absolute(path).lexically_normal()
                   << "\nFirst 10 accepted packets (directional flows):\n";
 
@@ -53,6 +67,28 @@ int main(int argc, char* argv[]) {
                 ++skipped;
                 continue;
             }
+
+                if(!packet.payload.empty())
+                {
+                    std::vector<match> alerts = ac.scanPattern(packet.payload.data(),packet.payload.size());
+
+                    for(size_t i=0; i<alerts.size();i++)
+                    {
+                        PayloadAlertCount++;
+
+                        std::cout << "[ALERT] " << alerts[i].info->id << " " << alerts[i].info->name
+                                << " (" << alerts[i].info->severity << ") "
+                                << pcpp::IPv4Address(packet.srcIP).toString() << ':' << packet.srcPort
+                                << " -> " << pcpp::IPv4Address(packet.dstIP).toString() << ':' << packet.dstPort
+                                << " offset=" << alerts[i].endOffset << '\n';
+                    }
+                    if(!alerts.empty())
+                    {
+                        std::string flow = pcpp::IPv4Address(packet.srcIP).toString() + ":" + std::to_string(packet.srcPort)
+                        + " -> " + pcpp::IPv4Address(packet.dstIP).toString() + ":" + std::to_string(packet.dstPort);
+                        ac.writeAlerts("output/alerts.log", alerts, flow);
+                    }
+                }
 
             const dataKey key{packet.srcIP, packet.dstIP, packet.srcPort,
                               packet.dstPort, packet.protocol};
@@ -87,6 +123,8 @@ int main(int argc, char* argv[]) {
                   << "\nAccepted captured bytes: " << bytes
                   << "\nSYN flags: " << syn << "\nACK flags: " << ack << '\n';
         // PcapHandler currently reports both EOF and read errors as false.
+
+        std::cout << "Payload Alerts: " << PayloadAlertCount << '\n';
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "Analysis failed: " << error.what() << '\n';
