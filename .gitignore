@@ -1,9 +1,14 @@
 # Build output
 build/
-build-ucrt64
+build-ucrt64/
 out/
 bin/
-test/
+
+# Generated output (alerts, logs)
+output/
+
+# Third-party source, each person keeps their own copy
+PcapPlusPlus/
 
 # Compiled files
 *.exe
@@ -17,6 +22,7 @@ test/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
+CMakeUserPresets.json
 
 # VS Code machine-specific settings
 .vscode/c_cpp_properties.json
@@ -30,10 +36,13 @@ cmake_install.cmake
 .DS_Store
 Thumbs.db
 
-# Captures / potentially large or sensitive traffic
+# Captures (large or sensitive, never committed)
 *.pcap
 *.pcapng
 
-
-*run.txt
+# Ignore stray text files...
 *.txt
+
+# ...except what the program needs to build and run (keep BELOW *.txt)
+!CMakeLists.txt
+!rules/*.txt

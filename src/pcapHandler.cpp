@@ -72,6 +72,9 @@ PacketInfo PcapHandler::getPacketInfo(pcpp::RawPacket& rawPacket) {
                 info.ack = tcpLayer->getTcpHeader()->ackFlag;
                 info.fin = tcpLayer->getTcpHeader()->finFlag;
                 info.rst = tcpLayer->getTcpHeader()->rstFlag;
+                uint8_t* data = tcpLayer->getLayerPayload();
+                size_t len = tcpLayer->getLayerPayloadSize();
+                if (data && len > 0) info.payload.assign(data, data + len);
             }
         } 
         else if (info.protocol == 17) { // pcpp::UDP = 17
@@ -81,10 +84,13 @@ PacketInfo PcapHandler::getPacketInfo(pcpp::RawPacket& rawPacket) {
             if (udpLayer != nullptr) {
                 info.srcPort = udpLayer->getSrcPort();
                 info.dstPort = udpLayer->getDstPort();
+                uint8_t* data = udpLayer->getLayerPayload();
+                size_t len = udpLayer->getLayerPayloadSize();
+                if (data && len > 0) info.payload.assign(data, data + len);
             }
         } 
         else {
-            info.protocol = 100000; //Unknown/unset protocol
+            info.protocol = 255; //Unknown/unset protocol
         }
 
         info.valid = true;
