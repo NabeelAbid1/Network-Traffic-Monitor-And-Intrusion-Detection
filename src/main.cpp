@@ -1,6 +1,7 @@
 #include "pcapHandler.h"
 #include "data_hash_table.h"
 #include "aho_corasick.h"
+#include "cidr_blacklist.h"
 
 #include <exception>
 #include <filesystem>
@@ -38,6 +39,8 @@ int main(int argc, char* argv[]) {
         uint64_t syn = 0, ack = 0;
         PacketInfo packet;
 
+        std::filesystem::create_directories("output"); //so alert files can be created
+
         //loading ahocorasick
         AhoCorasick ac;
         std::vector<patternInfo> patterns; //must remain unchanged and alive
@@ -48,47 +51,65 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
+        //loading cidr blacklist
+        CidrBlacklist blacklist;
+        if (blacklist.openBlacklist("rules/cidrBlacklist.txt") == 0)
+        {
+            std::cerr << "Warning: no CIDR entries loaded from cidrBlacklist.txt\n";
+        }
+
         uint64_t PayloadAlertCount = 0; //for payload alets only
+        uint64_t BlacklistAlertCount = 0; //for cidr blacklist alerts only
 
         std::cout << "Reading: " << std::filesystem::absolute(path).lexically_normal()
                   << "\nFirst 10 accepted packets (directional flows):\n";
 
         while (handler.readNextPacket(packet)) {
             ++readCount;
-            // The current parser has no validity flag. Conservatively exclude
-            // zero-port packets, including missing transport headers. This also
-            // excludes real packets using port zero; it is not full validation.
-            // if ((packet.protocol != 6 && packet.protocol != 17)
-            //     || packet.srcPort == 0 || packet.dstPort == 0) {
-            //     ++skipped;
-            //     continue;
-            // }
             if (!packet.valid) {
                 ++skipped;
                 continue;
             }
 
-                if(!packet.payload.empty())
+            const std::string srcText = pcpp::IPv4Address(packet.srcIP).toString();
+            const std::string dstText = pcpp::IPv4Address(packet.dstIP).toString();
+            const std::string flow = srcText + ":" + std::to_string(packet.srcPort)
+                                   + " -> " + dstText + ":" + std::to_string(packet.dstPort);
+
+            //cidr blacklist check, either end of the flow can be blacklisted
+            if (const cidrEntry* hit = blacklist.checkNetOrder(packet.srcIP))
+            {
+                BlacklistAlertCount++;
+                std::cout << "[BLACKLIST] SRC " << srcText << " matched " << hit->text
+                          << " | " << flow << '\n';
+                blacklist.writeAlert("output/alerts.log", srcText, "SRC", *hit, flow);
+            }
+            if (const cidrEntry* hit = blacklist.checkNetOrder(packet.dstIP))
+            {
+                BlacklistAlertCount++;
+                std::cout << "[BLACKLIST] DST " << dstText << " matched " << hit->text
+                          << " | " << flow << '\n';
+                blacklist.writeAlert("output/alerts.log", dstText, "DST", *hit, flow);
+            }
+
+            if(!packet.payload.empty())
+            {
+                std::vector<match> alerts = ac.scanPattern(packet.payload.data(),packet.payload.size());
+
+                for(size_t i=0; i<alerts.size();i++)
                 {
-                    std::vector<match> alerts = ac.scanPattern(packet.payload.data(),packet.payload.size());
+                    PayloadAlertCount++;
 
-                    for(size_t i=0; i<alerts.size();i++)
-                    {
-                        PayloadAlertCount++;
-
-                        std::cout << "[ALERT] " << alerts[i].info->id << " " << alerts[i].info->name
-                                << " (" << alerts[i].info->severity << ") "
-                                << pcpp::IPv4Address(packet.srcIP).toString() << ':' << packet.srcPort
-                                << " -> " << pcpp::IPv4Address(packet.dstIP).toString() << ':' << packet.dstPort
-                                << " offset=" << alerts[i].endOffset << '\n';
-                    }
-                    if(!alerts.empty())
-                    {
-                        std::string flow = pcpp::IPv4Address(packet.srcIP).toString() + ":" + std::to_string(packet.srcPort)
-                        + " -> " + pcpp::IPv4Address(packet.dstIP).toString() + ":" + std::to_string(packet.dstPort);
-                        ac.writeAlerts("output/alerts.log", alerts, flow);
-                    }
+                    std::cout << "[ALERT] " << alerts[i].info->id << " " << alerts[i].info->name
+                            << " (" << alerts[i].info->severity << ") "
+                            << flow
+                            << " offset=" << alerts[i].endOffset << '\n';
                 }
+                if(!alerts.empty())
+                {
+                    ac.writeAlerts("output/alerts.log", alerts, flow);
+                }
+            }
 
             const dataKey key{packet.srcIP, packet.dstIP, packet.srcPort,
                               packet.dstPort, packet.protocol};
@@ -108,8 +129,7 @@ int main(int argc, char* argv[]) {
             if (accepted <= 10) {
                 const keyInfo* history = flows.find(key);
                 std::cout << (packet.protocol == 6 ? "TCP " : "UDP ")
-                          << pcpp::IPv4Address(packet.srcIP).toString() << ':' << packet.srcPort
-                          << " -> " << pcpp::IPv4Address(packet.dstIP).toString() << ':' << packet.dstPort
+                          << flow
                           << " | flow packets=" << history->packetCount
                           << " bytes=" << history->byteCount << '\n';
             }
@@ -125,6 +145,7 @@ int main(int argc, char* argv[]) {
         // PcapHandler currently reports both EOF and read errors as false.
 
         std::cout << "Payload Alerts: " << PayloadAlertCount << '\n';
+        std::cout << "Blacklist Alerts: " << BlacklistAlertCount << '\n';
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "Analysis failed: " << error.what() << '\n';
