@@ -1,48 +1,56 @@
-# Build output
-build/
-build-ucrt64/
+# ---- Build output ----
+build*/
+cmake-build-*/
 out/
 bin/
 
-# Generated output (alerts, logs)
-output/
+# ---- Generated at runtime (keep the folder, ignore what's inside) ----
+output/*
+!output/.gitkeep
+*.log
 
-# Third-party source, each person keeps their own copy
+# ---- Third-party source (each person keeps their own copy) ----
 PcapPlusPlus/
 
-# Compiled files
+# ---- Compiled files ----
 *.exe
 *.obj
 *.o
-*.dll
+*.a
 *.lib
+*.dll
+*.so
+*.dylib
 *.pdb
+*.ilk
+*.exp
+*.out
 
-# CMake generated files
+# ---- CMake generated (matters only for in-source builds) ----
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
 CMakeUserPresets.json
 
-# VS Code machine-specific settings
-.vscode/c_cpp_properties.json
-
-# Visual Studio
+# ---- Editors / IDEs ----
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
 .vs/
+.cache/
 *.user
 *.suo
 
-# OS files
+# ---- OS files ----
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Captures (large or sensitive, never committed)
+# ---- Packet captures (large or may contain sensitive data) ----
 *.pcap
 *.pcapng
 
-# Ignore stray text files...
-*.txt
-
-# ...except what the program needs to build and run (keep BELOW *.txt)
-!CMakeLists.txt
-!rules/*.txt
