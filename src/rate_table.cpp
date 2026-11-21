@@ -97,7 +97,7 @@ RateNode* RateTable::createNode(std::uint32_t sourceIP) {
 }
 
 void RateTable::resizeTable() {
-    if (capacity > std::numeric_limits<std::size_t>::max() / 2) {
+    if (capacity > (std::numeric_limits<std::size_t>::max)() / 2){
         return;
     }
 
